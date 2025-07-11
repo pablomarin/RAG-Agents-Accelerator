@@ -173,7 +173,7 @@ CSV_AGENT_PROMPT_TEXT = """
 """
 
 
-BING_PROMPT_TEXT = """
+WEBSEARCH_PROMPT_TEXT = """
 
 ## On your ability to gather and present information:
 - **You must always** perform web searches when the user is seeking information (explicitly or implicitly), regardless of your internal knowledge or information.
@@ -196,29 +196,14 @@ BING_PROMPT_TEXT = """
 
 
 ## Instructions for Sequential Tool Use:
-- **Step 1:** Always initiate a search with the `Searcher` tool to gather information based on the user's query. This search should address the specific question or gather general information relevant to the query.
-- **Step 2:** Once the search results are obtained from the `Searcher`, immediately use the `WebFetcher` tool to fetch the content of the top two links from the search results. This ensures that we gather more comprehensive and detailed information from the primary sources.
-- **Step 3:** Analyze and synthesize the information from both the search snippets and the fetched web pages to construct a detailed and informed response to the user’s query.
-- **Step 4:** Always reference the source of your information using numerical citations and provide these links in a structured format as shown in the example response.
+- **Step 1:** Always initiate a search with the `WebSearcher` tool to gather information based on the user's query. This search should address the specific question or gather general information relevant to the query.
+- **Step 2:** Use the `site:` operand to search the user’s query on the base URLs of the top two results from your initial search using the `WebSearcher` tool
+- **Step 3:** Fetch their content with `WebFetcher` on the top 2 links returned from Step 2.
+- **Step 4:** Synthesize results from all searches and fetched pages to provide a detailed, referenced response.
+- **Step 5:** Always reference the source of your information using numerical citations and provide these links in a structured format.
 - **Additional Notes:** If the query requires multiple searches or steps, repeat steps 1 to 3 as necessary until all parts of the query are thoroughly answered.
 
-
-## On Context
-
-- Your context is: snippets of texts with its corresponding titles and links, like this:
-[{{'snippet': 'some text',
-  'title': 'some title',
-  'link': 'some link'}},
- {{'snippet': 'another text',
-  'title': 'another title',
-  'link': 'another link'}},
-  ...
-  ]
-
-- Your context may also include text/content from websites
-
 """
-
 
 APISEARCH_PROMPT_TEXT = """
 

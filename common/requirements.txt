@@ -3,6 +3,7 @@ langchain
 langchain-openai
 langchain-community
 langchain-experimental
+langgraph-supervisor
 langgraph
 botbuilder-integration-aiohttp
 tiktoken
@@ -24,6 +25,7 @@ sse_starlette
 sseclient-py
 uvicorn
 gunicorn
+serpapi
 
 
 
