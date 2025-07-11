@@ -22,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from collections import OrderedDict
 from tqdm import tqdm
 from bs4 import BeautifulSoup
+import serpapi
 
 from sqlalchemy.engine.url import URL
 from azure.ai.formrecognizer import DocumentAnalysisClient
@@ -59,11 +60,11 @@ logger = logging.getLogger(__name__)
 
 try:
     from .prompts import (DOCSEARCH_PROMPT_TEXT, CSV_AGENT_PROMPT_TEXT, MSSQL_AGENT_PROMPT_TEXT,
-                           BING_PROMPT_TEXT, APISEARCH_PROMPT_TEXT)
+                           WEBSEARCH_PROMPT_TEXT, APISEARCH_PROMPT_TEXT)
 except Exception as e:
     print(e)
     from prompts import (DOCSEARCH_PROMPT_TEXT, CSV_AGENT_PROMPT_TEXT, MSSQL_AGENT_PROMPT_TEXT,
-                         BING_PROMPT_TEXT, APISEARCH_PROMPT_TEXT)
+                         WEBSEARCH_PROMPT_TEXT, APISEARCH_PROMPT_TEXT)
 
     
 # Function to upload a single file
@@ -402,19 +403,134 @@ def get_answer(llm: AzureChatOpenAI,
     
 
 #####################################################################################################
-############################### AGENTS AND TOOL CLASSES #############################################
+############################### CUSTOM TOOL CLASSES #################################################
 #####################################################################################################
 
 class SearchInput(BaseModel):
     query: str = Field(description="should be a search query")
-    return_direct: bool = Field(
-        description="Whether or the result of this should be returned directly to the user without you seeing what it is",
-        default=False,
-    )
 
+    
+class WebSearchInput(BaseModel):
+    """Input schema for the WebSearcher tool."""
+    query: str = Field(description="The search query to be executed.")
+    location: Optional[str] = Field(default=None, description="Optional geographic location for the search (e.g., 'Austin, Texas').")
+    hl: Optional[str] = Field(default=None, description="Optional language code for the interface (e.g., 'en' for English).")
+    gl: Optional[str] = Field(default=None, description="Optional country code for the search (e.g., 'us' for United States).")
 
+class WebSearch_Tool(BaseTool):
+    """Tool for a Web Search Wrapper"""
 
-class GetDocSearchResults_Tool(BaseTool):
+    name: str = "WebSearcher"
+    description: str = "useful to search the internet for information."
+    args_schema: Type[BaseModel] = WebSearchInput
+    
+    def _run(self, query: str, location: Optional[str] = None, hl: Optional[str] = None, gl: Optional[str] = None) -> dict:
+        """Synchronous web search execution"""
+        try:
+            params = {
+                "engine": "google_light",
+                "q": query,
+            }
+            # Add optional parameters only if provided
+            if location:
+                params["location"] = location
+            if hl:
+                params["hl"] = hl
+            if gl:
+                params["gl"] = gl
+                
+            client = serpapi.Client(api_key=os.getenv("SERPAPI_KEY"))
+            results = client.search(params)
+            return {"organic_results": results.get("organic_results", [])}
+        except Exception as e:
+            logger.info(f"{e}")
+            return {"error": str(e)}
+    
+    async def _arun(self, query: str, location: Optional[str] = None, hl: Optional[str] = None, gl: Optional[str] = None) -> dict:
+        """Asynchronous web search execution"""
+        loop = asyncio.get_event_loop()
+        try:
+            params = {
+                "engine": "google_light",
+                "q": query,
+            }
+            # Add optional parameters only if provided
+            if location:
+                params["location"] = location
+            if hl:
+                params["hl"] = hl
+            if gl:
+                params["gl"] = gl
+                
+            client = serpapi.Client(api_key=os.getenv("SERPAPI_KEY"))
+            results = await loop.run_in_executor(
+                ThreadPoolExecutor(), 
+                lambda: client.search(params)
+            )
+            return {"organic_results": results.get("organic_results", [])}
+        except Exception as e:
+            logger.info(f"{e}")
+            return {"error": str(e)}
+    
+
+class FetchWebPageTool(BaseTool):
+    """Tool for fetching and returning the text content, image URLs, and links of a web page, capped at a maximum number of words."""
+
+    name: str  = "WebPageFetcher"
+    description: str  = "Useful for fetching the content, image URLs, and links of a web page/URL/link.\n"  # Modified description
+    
+    max_words: int = 10000
+    images: bool = True
+    links: bool = True
+
+    def __init__(self, **data):
+        super().__init__(**data)
+
+    def _run(self, url: str) -> str:
+        """Synchronously fetches a webpage and returns its text content, image URLs, and links capped at max_words."""
+        HEADERS = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:90.0) Gecko/20100101 Firefox/90.0'}
+        try:
+            response = requests.get(url, headers=HEADERS)
+            response.raise_for_status()  # Raises an HTTPError if the HTTP request returned an unsuccessful status code
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Extract text content
+            text_content = soup.get_text()
+            words = text_content.split()
+            capped_words = words[:self.max_words] if len(words) > self.max_words else words
+            text_result = ' '.join(capped_words)
+            
+            result = {
+                "text_content": text_result
+            }
+            
+            if self.links:
+                # Extract links
+                links = [a.get('href') for a in soup.find_all('a', href=True)]
+                result["links"] = links
+            
+            if self.images:
+                # Extract image URLs
+                images = [img.get('src') for img in soup.find_all('img', src=True)]
+                result["images"] = images
+            
+            return json.dumps(result)
+        
+        except requests.RequestException as e:
+            return json.dumps({"error": str(e)})
+
+    async def _arun(self, url: str) -> str:
+        """Asynchronously fetches a webpage and returns its text content, image URLs, and links capped at max_words."""
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(ThreadPoolExecutor(), self._run, url)
+            return result
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    
+
+class DocSearch_Tool(BaseTool):
     name: str = "documents_retrieval"
     description: str = "Retrieves documents from knowledge base"
     args_schema: Type[BaseModel] = SearchInput
@@ -446,29 +562,66 @@ class GetDocSearchResults_Tool(BaseTool):
         return results
 
 
+    
+#####################################################################################################
+############################### CUSTOM FUNCTIONS TO CREATE AGENTS ###################################
+#####################################################################################################    
+
 def create_docsearch_agent(
         llm:AzureChatOpenAI,
         indexes: List, k:int, reranker_th:float,
         prompt:str,
+        name: str,
         sas_token:str=""
     ):
 
 
-    docsearch_tool = GetDocSearchResults_Tool(indexes=indexes,
+    docsearch_tool = DocSearch_Tool(indexes=indexes,
                                               k=k,
                                               reranker_th=reranker_th, 
                                               sas_token=sas_token)
 
-    docsearch_agent = create_react_agent(llm, tools=[docsearch_tool], state_modifier=prompt)
+    docsearch_agent = create_react_agent(llm, tools=[docsearch_tool], prompt=prompt, name=name)
+    
+    # Add tag for filtering
+    docsearch_agent = docsearch_agent.with_config(tags=[name])
     
     return docsearch_agent
     
 
+def create_websearch_agent(
+        llm:AzureChatOpenAI,
+        prompt:str,
+        name: str,
+        k:int=10,
+        max_words: int = 10000,
+        images: bool = True,
+        links: bool = True
+    ):
+    
+    bing_tool = WebSearch_Tool(k=k)
+    web_fetch_tool = FetchWebPageTool(max_words=max_words, images=images, links=links)
+    
+    websearch_agent = create_react_agent(llm, 
+                                     tools=[bing_tool, web_fetch_tool], 
+                                     prompt=prompt,
+                                     name=name)
+    
+    # Add tag for filtering
+    websearch_agent = websearch_agent.with_config(tags=[name])
+    
+    return websearch_agent
+
+
 def create_csvsearch_agent(
         llm:AzureChatOpenAI,
         prompt:str,
+        name: str,
     ):
-    csvsearch_agent = create_react_agent(llm,tools=[PythonAstREPLTool()], state_modifier=prompt)
+    csvsearch_agent = create_react_agent(llm,tools=[PythonAstREPLTool()], prompt=prompt, name=name)
+    
+    # Add tag for filtering
+    csvsearch_agent = csvsearch_agent.with_config(tags=[name])
     
     return csvsearch_agent  
  
@@ -476,6 +629,7 @@ def create_csvsearch_agent(
 def create_sqlsearch_agent(
         llm:AzureChatOpenAI,
         prompt:str,
+        name: str,
     ):
     
     # Configuration for the database connection
@@ -496,50 +650,20 @@ def create_sqlsearch_agent(
     
     sqlsearch_agent = create_react_agent(llm, 
                                      tools=toolkit.get_tools(), 
-                                     state_modifier=prompt)
+                                     prompt=prompt,
+                                     name=name)
+    
+    # Add tag for filtering
+    sqlsearch_agent = sqlsearch_agent.with_config(tags=[name])
     
     return sqlsearch_agent  
 
-
-def create_websearch_agent(
-        llm:AzureChatOpenAI,
-        prompt:str,
-        k:int=10
-    ):
-    
-    bing_tool = BingSearchResults(api_wrapper=BingSearchAPIWrapper(), 
-                              num_results=k,
-                              name="Searcher",
-                              description="useful to search the internet")
-
-    def parse_html(content) -> str:
-        soup = BeautifulSoup(content, 'html.parser')
-        text_content_with_links = soup.get_text()
-        # Split the text into words and limit to the first 10,000
-        limited_text_content = ' '.join(text_content_with_links.split()[:10000])
-        return limited_text_content
-
-    def fetch_web_page(url: str) -> str:
-        HEADERS = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:90.0) Gecko/20100101 Firefox/90.0'}
-        response = requests.get(url, headers=HEADERS)
-        return parse_html(response.content)
-
-    web_fetch_tool = StructuredTool.from_function(
-        func=fetch_web_page,
-        name="WebFetcher",
-        description="useful to fetch the content of a url"
-    )
-    
-    websearch_agent = create_react_agent(llm, 
-                                     tools=[bing_tool, web_fetch_tool], 
-                                     state_modifier=prompt)
-    
-    return websearch_agent
 
 
 def create_apisearch_agent(
         llm:AzureChatOpenAI,
         prompt:str,
+        name: str,
     ):
     
     toolkit = RequestsToolkit(requests_wrapper=RequestsWrapper(),allow_dangerous_requests=True)
@@ -547,6 +671,10 @@ def create_apisearch_agent(
     
     apisearch_agent = create_react_agent(llm, 
                                      tools=toolkit.get_tools(), 
-                                     state_modifier=prompt)
+                                     prompt=prompt,
+                                     name=name)
+    
+    # Add tag for filtering
+    apisearch_agent = apisearch_agent.with_config(tags=[name])
     
     return apisearch_agent 

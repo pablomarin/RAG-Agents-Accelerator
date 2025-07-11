@@ -79,7 +79,7 @@ This is a **customer-funded Value-Based Delivery (VBD)**. Below, you'll find all
 3. Five types of sources are available:
    * 3a. Azure SQL Database - contains COVID-related statistics in the US.
    * 3b. API Endpoints - RESTful OpenAPI 3.0 API from a online currency broker.
-   * 3c. Azure Bing Search API - provides access to the internet allowing scenerios like: QnA on public websites .
+   * 3c. Web Search - provides access to the internet  allowing scenerios like: QnA on public websites .
    * 3d. Azure AI Search - contains AI-enriched documents from Blob Storage:
        - Transcripts of the dialogue of all the episodes of the TV Show: FRIENDS  
        - 90,000 Covid publication abstracts
@@ -109,7 +109,7 @@ This is a **customer-funded Value-Based Delivery (VBD)**. Below, you'll find all
    - Multi-modal input and output (text and audio)
    - Tabular Data Q&A with CSV files and SQL flavor Databases
    - Uses [Azure AI Document Intelligence SDK (former Form Recognizer)](https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/overview?view=doc-intel-3.0.0) to parse complex/large PDF documents
-   - Uses [Bing Search API](https://www.microsoft.com/en-us/bing/apis) to power internet searches and Q&A over public websites.
+   - Uses [SerpAPI](https://serpapi.com/) to power internet searches and Q&A over public websites.
    - Connects to API Data sources by converting natural language questions to API calls.
    - Uses CosmosDB as persistent memory to save user's conversations.
    - Uses [Streamlit](https://streamlit.io/) to build the Frontend web application in python.
@@ -121,20 +121,19 @@ This is a **customer-funded Value-Based Delivery (VBD)**. Below, you'll find all
 ## **Steps to Run the POC/Accelerator**
 
 ### **Pre-requisite**
-You must have an **Azure OpenAI Service** already created.
+You must have an **Azure OpenAI Service** already created in Azure AI Foundry.
 
 ### **1. Fork the Repository**
 - Fork this repository to your GitHub account.
 
 ### **2. Deploy Required Models**
-In **Azure OpenAI Studio**, deploy the following models:  
-*(Note: Older versions of these models will not work)*
+In **Azure AI Foundry**, deploy the following models: 
 
-- `gpt-4o`  
-- `gpt-4o-mini`  
-- `text-embedding-3-large`  
-- `tts`  
-- `whisper`  
+- `gpt-4o (or gpt-4.1)`  
+- `gpt-4o-mini (or gpt-4.1-mini)`
+- `gpt-4o-audio-preview`  
+- `gpt-4o-realtime-preview` 
+- `text-embedding-3-large` 
 
 ### **3. Create a Resource Group**
 - Create a **Resource Group (RG)** to house all the assets for this accelerator.  
@@ -160,11 +159,11 @@ Once done, delete this manually created account and then use the above deploymen
 2. Install the dependencies in a Conda environment. Run the following commands on the **Python 3.12 Conda environment** you plan to use for the notebooks:
 
    ```bash
-   conda create -n GPTSearch python=3.12
-   conda activate GPTSearch
+   conda create -n RAGAgents python=3.12
+   conda activate RAGAgents
    pip install -r ./common/requirements.txt
    conda install ipykernel
-   python -m ipykernel install --user --name=GPTSearch --display-name "GPTSearch (Python 3.12)"
+   python -m ipykernel install --user --name=RAGAgents --display-name "RAGAgents (Python 3.12)"
    ```
 
 #### **Option B: Visual Studio Code**  
@@ -191,7 +190,7 @@ Edit the `credentials.env` file with the appropriate values from the services cr
 ### **7. Run the Notebooks**
 - Execute the notebooks **in order**, as they build on top of each other.  
 - Use the appropriate kernel:
-  - For **AML**, select: `GPTSearch (Python 3.12)`
+  - For **AML**, select: `RAGAgents (Python 3.12)`
   - For **VS Code**, select the `.venv` kernel.
 
 ### **Troubleshooting**
