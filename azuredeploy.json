@@ -291,10 +291,10 @@
       "type": "Microsoft.Bing/accounts",
       "apiVersion": "2020-06-10",
       "name": "[parameters('bingSearchAPIName')]",
-      "kind": "Bing.Search.v7",
+      "kind": "Bing.Grounding",
       "location": "global",
       "sku": {
-        "name": "S1"
+        "name": "G1"
       }
     },
     {
